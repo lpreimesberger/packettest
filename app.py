@@ -29,7 +29,7 @@ where connection.customer_id = customer.id and connection.location_id = location
 """
 
 
-@app.route('/connections', methods=['GET', 'POST'])
+@app.route('/connections', methods=['GET'])
 def connections():
     supported_queries = {
         "location_name": "SELECT * from denormalize where location_name = %s;",
@@ -37,6 +37,31 @@ def connections():
         "customer_name": "SELECT * from denormalize where customer_name = %s;",
         "connection_speed": "SELECT * from denormalize where connection_speed = %s;",
         "connection_status": "SELECT * from denormalize where connection_status = %s;"}
+    query = request.args.get("query")
+    value = request.args.get("value")
+    if query is None or value is None:
+        return Response("Missing parameters - query and value are required", status=400)
+    if query not in supported_queries.keys():
+        return Response("invalid query - must be in " + json.dumps(supported_queries), status=400)
+    # no ORM - being simple
+    cursor = the_connection.cursor()
+    print(supported_queries[query], value)
+    # not a typo, really need a tuple for param
+    cursor.execute(supported_queries[query], (value,))
+    rows = cursor.fetchall()
+    return_value = []
+    for row in rows:
+        print(row)
+        return_value.append({"customer_id": row[0], "customer_name": row[1], "connection_id": row[2],
+                             "connection_description": row[3], "location_id": row[4], "location_name": row[5],
+                             "location_city": row[6]})
+    cursor.close()
+    # you can't send arrays - that's a browser hijack method
+    return {"data": return_value}
+
+
+@app.route('/connection', methods=['POST'])
+def add_connection():
     if request.method == 'POST':
         # handle post
         the_log.fatal("not implemented")

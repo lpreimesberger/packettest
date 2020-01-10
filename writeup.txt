@@ -1,0 +1,20 @@
+Back-end Developer Project
+For this project you will use the attached schema and dataset in dev-project.sql to create a REST API with two API endpoints:
+GET /connections
+This should return a list of connections with associated customer, location, and attribute data. It should support the following filters:
+
+location name
+location city
+customer name
+connection speed
+connection status
+POST /connection
+This endpoint will be used to create a new connection.
+
+Project Notes
+The requirements are purposely left ambiguous as there is no "correct" way to implement the API enpoints. We are more interested to see what you come up with and the reasoning behind the design choices you make
+The scope of the project is small, but we are looking for robust, production-quality code that could be used as the starting point for a full REST API
+We prefer to see the project done using Python, but the specific REST framework you choose is up to you
+Aim to limit the use of other requirements/dependencies as much as is reasonable
+We use Postgres, so please make sure any queries necessary will run correctly against a Postgres test database
+To make testing easier, the database name should be dev_project and the user/password for the database should should be dbuser/password

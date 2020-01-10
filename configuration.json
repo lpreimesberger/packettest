@@ -1,0 +1,6 @@
+{
+  "host": "localhost",
+  "database": "dev_project",
+  "user": "dbuser",
+  "password": "password"
+}

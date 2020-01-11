@@ -1,36 +1,48 @@
+# -*- coding: UTF-8 -*-
 import json
 import psycopg2 as psycopg2
 from flask import logging, request, Flask, Response
 
 
-# there are frameworks for this - but request is to be basic as possible
+# there are frameworks for this - but request is to be basic as possible - plain old flask
 app = Flask(__name__)
 the_connection: psycopg2 = None
 the_log = logging.create_logger(app)
 THE_VERSION: float = 1.00
-# let the server optimize instead of bunches of joins in code
+# let the server optimize instead of bunches of joins in code - these tables are full of scans anyway
+# but this would a bunch of ugly SQL without
 CREATE_TEMP_VIEW = """
-create temporary view denormalize as 
-select distinct customer.id as customer_id, 
-    customer.name as customer_name, 
-    connection.id as connection_id, 
-    connection.descripton as connection_description, 
+create temporary view denormalize as
+select distinct customer.id as customer_id,
+    customer.name as customer_name,
+    connection.id as connection_id,
+    connection.descripton as connection_description,
     location.id as location_id,
     location.name as location_name,
     location.city as location_city,
-    (select value from connection_attribute 
+    (select value from connection_attribute
      where connection_attribute.connection_id=connection.id and connection_attribute.name='speed') as connection_speed,
-    (select value from connection_attribute 
+    (select value from connection_attribute
      where connection_attribute.connection_id=connection.id and connection_attribute.name='status') as connection_status,
-    (select value from connection_attribute 
+    (select value from connection_attribute
      where connection_attribute.connection_id=connection.id and connection_attribute.name='maintenance') as connection_maintenance
     from connection, customer, location, connection_attribute
-where connection.customer_id = customer.id and connection.location_id = location.id 
+where connection.customer_id = customer.id and connection.location_id = location.id
 """
 
 
 @app.route('/connections', methods=['GET'])
 def connections():
+    """Connection query handler - real world there's a jwt or auth decorator and preflight for CORS
+    /connections?query=location_name&value=PDX
+    Args:
+        Requires http parameters:
+        - query: query type in supported_queries (location_name, location_city, customer_name, connection_speed, connection_status
+        - value: value to search for
+
+    Returns:
+        JSON in format { "data": [] } or http code with error.  no result is empty [] (not 404)
+    """
     supported_queries = {
         "location_name": "SELECT * from denormalize where location_name = %s;",
         "location_city": "SELECT * from denormalize where location_city = %s;",
@@ -42,8 +54,8 @@ def connections():
     if query is None or value is None:
         return Response("Missing parameters - query and value are required", status=400)
     if query not in supported_queries.keys():
-        return Response("invalid query - must be in " + json.dumps(supported_queries), status=400)
-    # no ORM - being simple
+        return Response("invalid query value", status=400)
+    # no ORM - being simple - not a fan of sqlalchemy anyway
     cursor = the_connection.cursor()
     print(supported_queries[query], value)
     # not a typo, really need a tuple for param
@@ -56,42 +68,52 @@ def connections():
                              "connection_description": row[3], "location_id": row[4], "location_name": row[5],
                              "location_city": row[6]})
     cursor.close()
-    # you can't send arrays - that's a browser hijack method
+    # you can't send arrays - that's a browser hijack vector - wrap in an object
     return {"data": return_value}
 
 
 @app.route('/connection', methods=['POST'])
 def add_connection():
-    if request.method == 'POST':
-        # handle post
-        the_log.fatal("not implemented")
-    else:
-        query = request.args.get("query")
-        value = request.args.get("value")
-        if query is None or value is None:
-            return Response("Missing parameters - query and value are required", status=400)
-        if query not in supported_queries.keys():
-            return Response("invalid query - must be in " + json.dumps(supported_queries), status=400)
-        # no ORM - being simple
-        cursor = the_connection.cursor()
-        print(supported_queries[query], value)
-        # not a typo, really need a tuple for param
-        cursor.execute(supported_queries[query], (value,))
-        rows = cursor.fetchall()
-        return_value = []
-        for row in rows:
-            print(row)
-            return_value.append({"customer_id": row[0], "customer_name": row[1], "connection_id": row[2],
-                                 "connection_description": row[3], "location_id": row[4], "location_name": row[5],
-                                 "location_city": row[6]})
-        cursor.close()
-        # you can't send arrays - that's a browser hijack method
-        return {"data": return_value}
+    """Connection add handler - real world there's a jwt or auth decorator and preflight for CORS
+    does very basic checking for valid input - not safe for multiple calls
+    Args:
+        Requires POST body in JSON form:
+            {
+              "description": "Test",
+              "customer_id": 1,
+              "location_id": 1
+            }
 
+    Returns:
+        Normal HTTP codes - invalid POST body will get a 400 from flask
+    """
 
-@app.route('/')
-def default():
-    return "XX"
+    content = request.get_json()  # we just let the key exceptions return 500
+    # this is hokey - the database should enforce this or we should have values from the jwt
+    cursor = the_connection.cursor()
+    cursor.execute("SELECT * from customer where id=%s", (str(content["customer_id"]),))
+    rows = cursor.fetchall()
+    if len(rows) == 0:
+        return Response("Invalid customer_id", status=400)
+    cursor.close()
+    cursor = the_connection.cursor()
+    cursor.execute("SELECT * from location where id=%s", (str(content["location_id"]),))
+    rows = cursor.fetchall()
+    if len(rows) == 0:
+        return Response("Invalid location_id", status=400)
+    cursor.close()
+    cursor = the_connection.cursor()
+    # this is really ghetto - the database isn't set up right, should have autoincrement on
+    cursor.execute("SELECT max(id)+1 from connection")
+    rows = cursor.fetchone()
+    print(rows)
+    cursor = the_connection.cursor()
+    cursor.execute("INSERT INTO connection(id,descripton,customer_id,location_id) values(%s,%s,%s,%s)",
+                   (str(rows[0]), str(content["description"]), str(content["customer_id"]), str(content["location_id"]),))
+    the_connection.commit()
+    cursor.close()
+    return {"data": "success"}
+
 
 # it's annoying to not know what version is running someplace
 the_log.debug("Starting PacketFabric 'Test' %.02f", THE_VERSION)
